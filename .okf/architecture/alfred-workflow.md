@@ -32,8 +32,9 @@ Notification (`{query}`).
 # Binary path
 
 Alfred runs scripts without the user's shell `PATH`, so the plist holds an absolute,
-shell-quoted path. `--bin` sets it; otherwise `tablefix` found on `PATH` (a mise shim
-or `~/go/bin`, both stable across upgrades), else the running binary. Moving the binary
+shell-quoted path. `--bin` sets it; otherwise `tablefix` found on `PATH` (with mise activated
+that is `…/installs/go-github-com-samhvw8-tablefix/latest/bin/tablefix`, whose `latest`
+link mise moves on upgrade; or `~/go/bin`), else the running binary. Moving the binary
 means running `alfred install` again.
 
 # Finding the workflow

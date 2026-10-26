@@ -6,7 +6,7 @@ tags: [output, clipboard, macos]
 resource: clipboard.go
 generated:
   by: claude-code/claude-opus-5-5
-  at: '2026-10-26T17:10:00Z'
+  at: '2026-10-26T17:30:00Z'
 ---
 
 # Targets
@@ -30,6 +30,13 @@ generated:
   use off macOS fails with a message that says to pipe instead.
 
 # Rich-text clipboard
+
+Every macOS tool runs by absolute path (`/usr/bin/…`) with `LANG`/`LC_ALL=en_US.UTF-8`.
+Alfred gives scripts no PATH guarantee and no `LANG`, and without a locale `pbpaste`
+turns every non-ASCII character into `?`, so a `│` table read as "no table". The
+Python version escaped this only because Python sets `LC_CTYPE` for child processes
+(PEP 538). `mise run test:clipboard` checks the round trip with an empty environment.
+
 
 `textutil -convert rtf` turns the HTML table into RTF (a real `\trowd`/`\cell` table).
 `clipboard.go` writes the RTF to a temp file, then a JXA script (`osascript -l JavaScript`) clears `NSPasteboard` and sets

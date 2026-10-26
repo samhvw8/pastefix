@@ -12,11 +12,20 @@ import (
 
 var errNoClipboard = errors.New("the clipboard needs macOS; pipe the table in instead (tablefix md < table.txt)")
 
+// macCommand runs a macOS tool by absolute path with a UTF-8 locale. Alfred runs
+// scripts with no PATH guarantee and no LANG, and without a locale pbpaste
+// turns every non-ASCII character (such as "│") into "?".
+func macCommand(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command("/usr/bin/"+name, args...)
+	cmd.Env = append(os.Environ(), "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
+	return cmd
+}
+
 func readClipboard() (string, error) {
 	if runtime.GOOS != "darwin" {
 		return "", errNoClipboard
 	}
-	out, err := exec.Command("pbpaste").Output()
+	out, err := macCommand("pbpaste").Output()
 	if err != nil {
 		return "", fmt.Errorf("pbpaste: %w", err)
 	}
@@ -43,7 +52,7 @@ func writeClipboard(plain, richHTML string) error {
 	}
 	rtfPath := ""
 	if richHTML != "" {
-		cmd := exec.Command("textutil", "-stdin", "-format", "html", "-inputencoding", "UTF-8", "-convert", "rtf", "-stdout")
+		cmd := macCommand("textutil", "-stdin", "-format", "html", "-inputencoding", "UTF-8", "-convert", "rtf", "-stdout")
 		cmd.Stdin = strings.NewReader(richHTML)
 		rtf, err := cmd.Output()
 		if err != nil {
@@ -63,7 +72,7 @@ func writeClipboard(plain, richHTML string) error {
 		}
 		rtfPath = f.Name()
 	}
-	cmd := exec.Command("osascript", "-l", "JavaScript", "-e", pasteboardJXA, plain, richHTML, rtfPath)
+	cmd := macCommand("osascript", "-l", "JavaScript", "-e", pasteboardJXA, plain, richHTML, rtfPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

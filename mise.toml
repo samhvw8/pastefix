@@ -36,3 +36,7 @@ done
 (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
 gh release create "v$v" dist/*.tar.gz dist/checksums.txt --title "v$v" --generate-notes
 '''
+
+[tasks."test:clipboard"]
+description = "Real clipboard round trip with no PATH and no LANG, as Alfred runs it (overwrites the clipboard)"
+run = "TABLEFIX_CLIPBOARD_TEST=1 go test -run WithoutLocale -v ./..."

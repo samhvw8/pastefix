@@ -280,7 +280,7 @@ func alfredWorkflowsDir() (string, error) {
 		return "", err
 	}
 	prefs := filepath.Join(home, "Library", "Application Support", "Alfred", "Alfred.alfredpreferences")
-	if out, err := exec.Command("defaults", "read", "com.runningwithcrayons.Alfred-Preferences", "syncfolder").Output(); err == nil {
+	if out, err := macCommand("defaults", "read", "com.runningwithcrayons.Alfred-Preferences", "syncfolder").Output(); err == nil {
 		if sync := strings.TrimSpace(string(out)); sync != "" {
 			if strings.HasPrefix(sync, "~/") {
 				sync = filepath.Join(home, sync[2:])
@@ -313,7 +313,7 @@ func findInstalled() (string, error) {
 			continue
 		}
 		// plutil reads both XML and binary plists.
-		out, err := exec.Command("plutil", "-convert", "xml1", "-o", "-", p).Output()
+		out, err := macCommand("plutil", "-convert", "xml1", "-o", "-", p).Output()
 		if err == nil && bundleIDRe.Match(out) {
 			return filepath.Join(dir, e.Name()), nil
 		}
