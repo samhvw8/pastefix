@@ -1,0 +1,32 @@
+[project]
+name = "tablefix"
+version = "0.1.0"
+description = "Turn a Markdown or box-drawing text table into a real table for Apple Notes, a code-block table for Slack, or a list for chat boxes."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "samhvw8" }]
+keywords = ["markdown", "table", "clipboard", "apple-notes", "slack", "alfred", "macos"]
+classifiers = [
+    "Environment :: Console",
+    "Environment :: MacOS X",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/samhvw8/tablefix"
+
+[project.scripts]
+tablefix = "tablefix:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
