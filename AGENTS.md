@@ -36,5 +36,7 @@ mise run release    # check, then gh release v<version> with 4 binaries
   Change the workflow only in `alfred.go`'s template, and keep the bundle id, so
   `alfred install` keeps updating the same folder.
 - The user's machine installs it with `go:github.com/samhvw8/tablefix` in
-  `~/.dotfiles/mise/config.toml`; `mise install -f go:github.com/samhvw8/tablefix`
-  picks up a new commit, then `tablefix alfred install` if the path changed.
+  `~/.dotfiles/mise/config.toml`. After a push, run
+  `GOPROXY=direct mise upgrade go:github.com/samhvw8/tablefix`: the Go proxy serves a
+  cached `@latest` for a while, so a plain `mise install -f` reinstalls the old commit.
+  The workflow path (`…/latest/bin/tablefix`) does not change on upgrade.
