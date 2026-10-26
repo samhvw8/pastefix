@@ -3,10 +3,10 @@ type: Architecture
 title: Parsing text tables
 description: How tablefix reads Markdown pipe tables and box-drawing tables, joins wrapped cells and detects the header.
 tags: [parser]
-resource: src/tablefix/__init__.py
+resource: table.go
 generated:
   by: claude-code/claude-opus-5-5
-  at: '2026-10-26T16:30:00Z'
+  at: '2026-10-26T17:10:00Z'
 ---
 
 # Rules
@@ -30,4 +30,6 @@ generated:
 The box renderer draws the header rule as `╞═╪═╡`, so its own output parses back to
 the same header and rows (tested).
 
-Column widths count East Asian wide characters as 2 and combining marks as 0.
+Column widths use `go-runewidth`: East Asian wide characters count 2, combining marks 0.
+`--width` wraps at spaces only; a hyphenated word stays whole, so a re-read joins the
+lines back to the same text (the Python version split at hyphens and lost that).

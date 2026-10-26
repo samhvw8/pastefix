@@ -1,35 +1,46 @@
 ---
 type: Architecture
 title: Alfred workflow
-description: The tf keyword workflow, why it bundles its own tablefix, and how it is built and released.
-tags: [alfred, release]
-resource: alfred/info.plist
+description: How `tablefix alfred install` writes the tf workflow, why it calls the binary by absolute path, and how reinstall finds it.
+tags: [alfred]
+resource: alfred.go
 generated:
   by: claude-code/claude-opus-5-5
-  at: '2026-10-26T16:30:00Z'
+  at: '2026-10-26T17:10:00Z'
 ---
+
+# Commands
+
+| Command | Does |
+|---|---|
+| `tablefix alfred install [--bin P] [--keyword tf]` | Writes `info.plist` into Alfred's workflows folder, or updates the installed one |
+| `tablefix alfred uninstall` | Removes the folder whose plist has the tablefix bundle id |
+| `tablefix alfred export [-o F]` | Writes a `.alfredworkflow` zip to import by hand |
+| `tablefix alfred filter` | The Script Filter itself: prints Alfred JSON |
 
 # Flow
 
-Script Filter (keyword `tf`, `filter.py`) → Run Script (`/bin/bash`, argv) → Post
+Script Filter (keyword, `<bin> alfred filter`) → Run Script (`/bin/bash`, argv) → Post
 Notification (`{query}`).
 
-- `filter.py` runs the bundled `tablefix.py md --stdout` on the clipboard first. With a
-  table it lists the five targets with the row count; without one it shows one invalid
-  item with the error, so nothing runs.
-- Run Script: `/usr/bin/python3 ./tablefix.py "$1" --copy < /dev/null 2>&1 | tail -1`.
-  `--copy` is needed because stdout is not a terminal; `< /dev/null` makes it read the
-  clipboard. The last line (success or error) becomes the notification.
+- `alfred filter` parses the clipboard. With a table it lists the five targets with the
+  row count; without one it shows one invalid item with the error, so Enter does nothing.
+- Run Script: `<bin> "$1" --copy < /dev/null 2>&1 | tail -1`. `--copy` is needed because
+  stdout is not a terminal; `< /dev/null` makes it read the clipboard. The last line
+  (success or error) becomes the notification.
 
-# Self-contained
+# Binary path
 
-Alfred runs scripts without the user's shell profile, so mise shims and `~/.local/bin`
-are not on PATH. The workflow therefore ships its own copy of the module as
-`tablefix.py` and runs it with `/usr/bin/python3` (3.9 on current macOS). This is why
-the module must stay stdlib-only and 3.9-compatible; `mise run test` checks 3.9.
+Alfred runs scripts without the user's shell `PATH`, so the plist holds an absolute,
+shell-quoted path. `--bin` sets it; otherwise `tablefix` found on `PATH` (a mise shim
+or `~/go/bin`, both stable across upgrades), else the running binary. Moving the binary
+means running `alfred install` again.
 
-# Build and release
+# Finding the workflow
 
-`mise run alfred` builds `dist/tablefix.alfredworkflow` and stamps the module's
-`__version__` into the plist. `mise run release` runs `check`, then
-`gh release create v<version>` with the workflow attached.
+Alfred's folder is `~/Library/Application Support/Alfred/Alfred.alfredpreferences/workflows`,
+or the sync folder from `defaults read com.runningwithcrayons.Alfred-Preferences syncfolder`.
+Install and uninstall match a folder by bundle id `com.github.samhvw8.tablefix` (read
+with `plutil`, so binary plists work too). The object uids are fixed, so a reinstall
+changes only what differs. Install also deletes `filter.py` and `tablefix.py` left by
+the Python-era workflow.

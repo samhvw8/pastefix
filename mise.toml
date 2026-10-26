@@ -1,26 +1,38 @@
 [tools]
-python = "3.14"
-uv = "latest"
+go = "1.27.3"
+
+[tasks.build]
+description = "Build bin/tablefix"
+run = "go build -o bin/tablefix ."
 
 [tasks.test]
-description = "Unit tests on the current Python and on 3.9 (macOS system Python, which the Alfred workflow uses)"
-run = ["uv run pytest -q", "uv run --isolated --python 3.9 --with pytest --with-editable . pytest -q"]
+run = "go test -race ./..."
 
-[tasks.alfred]
-description = "Build dist/tablefix.alfredworkflow"
-run = "python3 scripts/build_alfred.py"
+[tasks.vet]
+run = "go vet ./... && GOOS=linux go vet ./..."
+
+[tasks.fmt-check]
+run = "test -z \"$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
 
 [tasks."docs:validate"]
 run = "uv run ~/.claude/skills/validate/scripts/okf_validate.py .okf --strict"
 
 [tasks.check]
-description = "Tests, workflow build and OKF validation"
-depends = ["test", "alfred", "docs:validate"]
+description = "gofmt, vet (macOS + Linux), race tests, OKF validation"
+depends = ["fmt-check", "vet", "test", "docs:validate"]
 
 [tasks.release]
-description = "Tag v<version> and publish a GitHub release with the Alfred workflow"
+description = "Tag v<version> and publish a GitHub release with macOS and Linux binaries"
 depends = ["check"]
 run = '''
-v=$(python3 -c 'import re;print(re.search(r"__version__ = \"(.+?)\"", open("src/tablefix/__init__.py").read())[1])')
-gh release create "v$v" dist/tablefix.alfredworkflow --title "v$v" --generate-notes
+set -e
+v=$(sed -n 's/^const version = "\(.*\)"/\1/p' main.go)
+rm -rf dist && mkdir dist
+for p in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+  os=${p%/*}; arch=${p#*/}; d=dist/tablefix_${v}_${os}_${arch}
+  mkdir "$d" && GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$d/tablefix" . && cp README.md LICENSE "$d/"
+  tar -C dist -czf "$d.tar.gz" "$(basename "$d")" && rm -rf "$d"
+done
+(cd dist && shasum -a 256 *.tar.gz > checksums.txt)
+gh release create "v$v" dist/*.tar.gz dist/checksums.txt --title "v$v" --generate-notes
 '''

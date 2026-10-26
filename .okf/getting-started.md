@@ -6,16 +6,16 @@ tags: [getting-started]
 status: stable
 generated:
   by: claude-code/claude-opus-5-5
-  at: '2026-10-26T16:30:00Z'
+  at: '2026-10-26T17:10:00Z'
 ---
 
 # Overview
 
 tablefix turns a text table (Markdown pipes or box-drawing lines) into a form that
 pastes well in the target app: a rich-text table for Apple Notes and other editors, a
-code-block box table for Slack, or a list for chat boxes. It is one stdlib-only Python
-module, `src/tablefix/__init__.py`, with no dependencies, so it also runs on the macOS
-system Python 3.9.
+code-block box table for Slack, or a list for chat boxes. It is one Go binary (a
+`main` package at the repo root) and installs itself into Alfred as a workflow.
+It began as a Python script; see [the Go rewrite](/decisions/go-rewrite.md).
 
 It was built after an AI-made box table pasted into Apple Notes showed up as rows of
 pipes with drawn lines between them (Notes renders `├───┼───┤` as strokes).
@@ -24,10 +24,11 @@ pipes with drawn lines between them (Notes renders `├───┼───┤`
 
 | Path | What it is |
 |---|---|
-| `src/tablefix/__init__.py` | Parser, renderers, clipboard writer, CLI (`main`) |
-| `alfred/` | Alfred workflow source: `info.plist`, `filter.py` (Script Filter) |
-| `scripts/build_alfred.py` | Zips `alfred/` plus the module as `tablefix.py` into `dist/tablefix.alfredworkflow` |
-| `tests/` | pytest, run on the current Python and on 3.9 |
+| `table.go` | `Parse` and the renderers |
+| `clipboard.go` | macOS clipboard read and rich-text write |
+| `alfred.go` | `tablefix alfred …`: writes, finds and removes the workflow |
+| `main.go` | CLI flags and the stdin/stdout/clipboard rules |
+| `tablefix_test.go` | Go tests |
 
 # Concepts
 
@@ -35,3 +36,4 @@ pipes with drawn lines between them (Notes renders `├───┼───┤`
 - [Output and clipboard](/architecture/output.md): the five targets and how the clipboard is written.
 - [Alfred workflow](/architecture/alfred-workflow.md): the self-contained workflow and its release.
 - [One target per destination app](/decisions/targets-per-app.md): why Slack gets a code block or a list.
+- [Go rewrite](/decisions/go-rewrite.md): why Go, and why the CLI installs the workflow.

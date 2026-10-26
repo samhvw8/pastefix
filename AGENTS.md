@@ -9,28 +9,32 @@ describes, and run the validator. Start at `.okf/index.md`.
 
 ## Layout
 
+One `main` package at the root, so `go install github.com/samhvw8/tablefix@latest` works.
+
 | Path | What it is |
 |---|---|
-| `src/tablefix/__init__.py` | The whole tool: parser, renderers, clipboard, CLI |
-| `alfred/` | Alfred workflow source (`info.plist`, `filter.py`) |
-| `scripts/build_alfred.py` | Builds `dist/tablefix.alfredworkflow` with a bundled copy of the module |
-| `tests/test_tablefix.py` | pytest |
+| `table.go` | `Parse` and the renderers (`Box`, `Markdown`, `List`, `HTML`) |
+| `clipboard.go` | macOS clipboard: `pbpaste`, and HTML + RTF + text via `textutil` and JXA |
+| `alfred.go` | `tablefix alfred install/uninstall/export/filter`: writes the workflow plist |
+| `main.go` | Flags, target choice, stdin/stdout/clipboard rules |
+| `tablefix_test.go` | Tests (parser, renderers, CLI with fake clipboard, Alfred plist) |
 
 ## Commands
 
 ```bash
-mise run test       # pytest on Python 3.14 and 3.9
-mise run alfred     # build dist/tablefix.alfredworkflow
-mise run check      # test + alfred + docs:validate
-mise run release    # check, then gh release v<__version__> with the workflow
+mise run test       # go test -race
+mise run check      # gofmt, vet (macOS + Linux), tests, docs:validate
+mise run build      # bin/tablefix
+mise run release    # check, then gh release v<version> with 4 binaries
 ```
 
 ## Rules
 
-- **Stdlib only, Python 3.9+.** The Alfred workflow runs the module on macOS's
-  `/usr/bin/python3` (3.9). Never add a dependency or 3.10+ syntax.
 - **Fail loudly.** No table or a bad `--header` exits 1 and leaves the clipboard alone.
-- **Bump `__version__`** in `src/tablefix/__init__.py` and `pyproject.toml` together
-  before `mise run release`.
-- The user's machine installs it with `pipx:samhvw8/tablefix` in `~/.dotfiles`
-  (`mise/config.toml`); `mise install -f pipx:samhvw8/tablefix` picks up a new commit.
+- **Bump `version`** in `main.go` before `mise run release`.
+- **The workflow calls the binary by absolute path.** Alfred has no shell `PATH`.
+  Change the workflow only in `alfred.go`'s template, and keep the bundle id, so
+  `alfred install` keeps updating the same folder.
+- The user's machine installs it with `go:github.com/samhvw8/tablefix` in
+  `~/.dotfiles/mise/config.toml`; `mise install -f go:github.com/samhvw8/tablefix`
+  picks up a new commit, then `tablefix alfred install` if the path changed.

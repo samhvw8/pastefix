@@ -1,6 +1,4 @@
-.venv/
-__pycache__/
-*.egg-info/
+bin/
 dist/
-.pytest_cache/
+*.alfredworkflow
 .env*
