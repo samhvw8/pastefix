@@ -1,10 +1,12 @@
-# tablefix
+# pastefix
+
+*Formerly `tablefix`.*
 
 Copy a text table from ChatGPT, Claude or a terminal, and paste it as a table that
 looks right where it lands.
 
 Pasting a Markdown table (`| a | b |`) or a box-drawing table (`│ a │ b │`) into
-Apple Notes, Slack or a chat box gives you a mess of pipes and lines. `tablefix`
+Apple Notes, Slack or a chat box gives you a mess of pipes and lines. `pastefix`
 reads the table from the clipboard and puts a better version back:
 
 | Target | Where to paste | What you get |
@@ -23,13 +25,13 @@ Slack messages cannot show tables at all, in mrkdwn or in Block Kit, so `slack` 
 A single Go binary with no runtime dependencies:
 
 ```bash
-go install github.com/samhvw8/tablefix@latest
+go install github.com/samhvw8/pastefix@latest
 # or, with mise
-mise use -g go:github.com/samhvw8/tablefix
+mise use -g go:github.com/samhvw8/pastefix
 ```
 
 Clipboard use is macOS only (`pbpaste`, `osascript`, `textutil`). On Linux, pipe text
-in and out: `tablefix md < table.txt`.
+in and out: `pastefix md < table.txt`.
 
 ### Alfred workflow
 
@@ -37,28 +39,40 @@ The CLI writes the workflow into Alfred for you, pointing at its own path (Alfre
 runs scripts without your shell `PATH`). It needs the Alfred Powerpack.
 
 ```bash
-tablefix alfred install            # or --keyword tbl, --bin /path/to/tablefix
-tablefix alfred uninstall
-tablefix alfred export -o tablefix.alfredworkflow   # a file to import by hand
+pastefix alfred install            # or --keyword tbl, --bin /path/to/pastefix
+pastefix alfred uninstall
+pastefix alfred export -o pastefix.alfredworkflow   # a file to import by hand
 ```
 
 Running `install` again updates the same workflow in place. Then:
 
 1. Copy a table.
-2. Type `tf` in Alfred. Each target shows how many rows it found on the clipboard.
+2. Type `pf` in Alfred. Each target shows how many rows it found on the clipboard.
 3. Choose a target and press Enter.
 4. Paste with ⌘V.
 
-If you move the binary, run `tablefix alfred install` again.
+Press ⌥-Enter instead of Enter to add the [AI step](#ai-step-optional).
+
+To rewrite the table with your own instruction, type it after `pf`:
+
+| You type | Result |
+|---|---|
+| `pf slack translate to Vietnamese` | Slack only; Enter runs the instruction |
+| `pf shorten each cell` | Every target; Enter runs the instruction |
+| `pf slack vi` | Runs your saved shortcut `vi` (see [Settings](#settings-and-shortcuts)) |
+| `pf no` | `notes`, with no AI step |
+| `pf /` | Settings commands: `/config`, `/set apikey KEY`, `/prompt add NAME TEXT`, … |
+
+If you move the binary, run `pastefix alfred install` again.
 
 ## Use
 
 ```bash
-tablefix notes                                 # clipboard -> clipboard, then ⌘V in Notes
-tablefix slack --width 30                      # wrap long cells at 30 characters
-tablefix list --header "Field,Journals,Magazines"
-tablefix list --bold "**"                      # Markdown bold instead of Slack *bold*
-pbpaste | tablefix md > table.md               # piped: prints instead of copying
+pastefix notes                                 # clipboard -> clipboard, then ⌘V in Notes
+pastefix slack --width 30                      # wrap long cells at 30 characters
+pastefix list --header "Field,Journals,Magazines"
+pastefix list --bold "**"                      # Markdown bold instead of Slack *bold*
+pbpaste | pastefix md > table.md               # piped: prints instead of copying
 ```
 
 - **Input:** stdin when it is a pipe or a file, else the clipboard.
@@ -73,9 +87,53 @@ pbpaste | tablefix md > table.md               # piped: prints instead of copyin
 - No table found, or a `--header` with the wrong number of names, exits with an
   error and changes nothing.
 
+## AI step (optional)
+
+After the table is fixed in code, a model can improve its text. The code still draws
+the table, so the model cannot break it. It runs one of two ways:
+
+- **No API key (default):** through the [Claude Code](https://claude.com/claude-code)
+  CLI on your Claude login. No extra cost; about 5 seconds.
+- **With an API key** (`pastefix config set apikey KEY`): directly on the Anthropic
+  API. Billed to the key; Haiku costs well under a cent a run.
+
+```bash
+pastefix notes --ai clean                        # join wrapped words, fix typos, add a missing header
+pastefix list --ai "translate to Vietnamese"     # any other text is the instruction
+pastefix list --ai vi                            # a saved shortcut
+pastefix md --ai clean --ai-model sonnet         # default model: haiku, or the config model
+```
+
+`clean` keeps every row, column and fact; pastefix rejects an answer with a different
+shape. In Alfred, press ⌥-Enter instead of Enter, or type an instruction after `pf`. One run takes about 5 seconds. If
+the AI step fails (no `claude`, not logged in, a bad answer), pastefix says why and
+copies the table fixed in code.
+
+```
+| Column 1 | Column 2                                 |     →     | Name  | Venue                                        |
+| TOCHI    | ACM Computer- Human Interac tion journal |  --ai     | TOCHI | ACM Computer-Human Interaction journal       |
+| PSPI     | Psychological Science in th e Public ... |  clean    | PSPI  | Psychological Science in the Public Interest |
+```
+
+## Settings and shortcuts
+
+```bash
+pastefix config                                  # list every setting
+pastefix config set apikey sk-ant-...            # stored in the macOS keychain, never in a file
+pastefix config unset apikey                     # back to your Claude login
+pastefix config set model sonnet                 # haiku, sonnet, opus or a model id
+pastefix prompt add vi translate to Vietnamese   # shortcut: --ai vi, or pf slack vi
+pastefix prompt rm vi
+```
+
+In Alfred the same commands start with `/`: `pf /config`, `pf /set apikey sk-ant-...`,
+`pf /prompt add vi translate to Vietnamese`. With an empty query, Alfred lists your
+shortcuts under the targets. Settings live in
+`~/Library/Application Support/pastefix/config.json`.
+
 ## Examples
 
-`tablefix slack --width 24`:
+`pastefix slack --width 24`:
 
 ```
 ┌──────────┬────────────────────────┬─────────────────────────┐
@@ -88,7 +146,7 @@ pbpaste | tablefix md > table.md               # piped: prints instead of copyin
 └──────────┴────────────────────────┴─────────────────────────┘
 ```
 
-`tablefix list`:
+`pastefix list`:
 
 ```
 *Learning*
@@ -105,7 +163,7 @@ pbpaste | tablefix md > table.md               # piped: prints instead of copyin
 ```bash
 mise run test      # go test -race
 mise run check     # gofmt, vet (macOS + Linux), tests, docs validation
-mise run build     # bin/tablefix
+mise run build     # bin/pastefix
 mise run release   # tag and publish macOS and Linux binaries
 ```
 

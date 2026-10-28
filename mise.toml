@@ -2,8 +2,8 @@
 go = "1.27.3"
 
 [tasks.build]
-description = "Build bin/tablefix"
-run = "go build -o bin/tablefix ."
+description = "Build bin/pastefix"
+run = "go build -o bin/pastefix ."
 
 [tasks.test]
 run = "go test -race ./..."
@@ -29,8 +29,8 @@ set -e
 v=$(sed -n 's/^const version = "\(.*\)"/\1/p' main.go)
 rm -rf dist && mkdir dist
 for p in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
-  os=${p%/*}; arch=${p#*/}; d=dist/tablefix_${v}_${os}_${arch}
-  mkdir "$d" && GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$d/tablefix" . && cp README.md LICENSE "$d/"
+  os=${p%/*}; arch=${p#*/}; d=dist/pastefix_${v}_${os}_${arch}
+  mkdir "$d" && GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$d/pastefix" . && cp README.md LICENSE "$d/"
   tar -C dist -czf "$d.tar.gz" "$(basename "$d")" && rm -rf "$d"
 done
 (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
@@ -39,4 +39,4 @@ gh release create "v$v" dist/*.tar.gz dist/checksums.txt --title "v$v" --generat
 
 [tasks."test:clipboard"]
 description = "Real clipboard round trip with no PATH and no LANG, as Alfred runs it (overwrites the clipboard)"
-run = "TABLEFIX_CLIPBOARD_TEST=1 go test -run WithoutLocale -v ./..."
+run = "PASTEFIX_CLIPBOARD_TEST=1 go test -run WithoutLocale -v ./..."

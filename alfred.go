@@ -10,16 +10,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"text/template"
 )
 
-const bundleID = "com.github.samhvw8.tablefix"
+const bundleID = "com.github.samhvw8.pastefix"
+
+// legacyBundleID is the id from before the rename; install updates that workflow
+// in place instead of adding a second one.
+const legacyBundleID = "com.github.samhvw8.tablefix"
 
 // Fixed object ids keep the workflow identical across reinstalls.
 const (
@@ -28,7 +34,9 @@ const (
 	uidNotify = "6C1E2F0A-5B7D-4E61-9A39-1F2B3C4D5E03"
 )
 
-var targets = []struct{ name, where, what string }{
+type target struct{ name, where, what string }
+
+var targets = []target{
 	{"notes", "Apple Notes / Pages / Mail / Google Docs", "Real table (rich text)"},
 	{"slack", "Slack", "Aligned table in a code block"},
 	{"list", "Chat box (Messenger, Zalo, iMessage)", "One block per row with bullets"},
@@ -38,15 +46,18 @@ var targets = []struct{ name, where, what string }{
 
 func runAlfred(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: tablefix alfred install|uninstall|export|filter")
+		return errors.New("usage: pastefix alfred install|uninstall|export|filter")
 	}
 	switch args[0] {
 	case "filter":
-		return alfredFilter(stdout)
+		return alfredFilter(strings.Join(args[1:], " "), stdout)
+	case "run":
+		// The run script passes the picked item's arg; the item sets $ai.
+		return alfredRun(strings.Join(args[1:], " "), os.Getenv("ai"), stderr)
 	case "install":
 		fs := flag.NewFlagSet("alfred install", flag.ContinueOnError)
-		bin := fs.String("bin", "", "tablefix binary the workflow calls (default: tablefix on PATH, else this binary)")
-		keyword := fs.String("keyword", "tf", "Alfred keyword")
+		bin := fs.String("bin", "", "pastefix binary the workflow calls (default: pastefix on PATH, else this binary)")
+		keyword := fs.String("keyword", "pf", "Alfred keyword")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -57,7 +68,7 @@ func runAlfred(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		if dir == "" {
-			return errors.New("no tablefix workflow is installed in Alfred")
+			return errors.New("no pastefix workflow is installed in Alfred")
 		}
 		if err := os.RemoveAll(dir); err != nil {
 			return err
@@ -66,9 +77,9 @@ func runAlfred(args []string, stdout, stderr io.Writer) error {
 		return nil
 	case "export":
 		fs := flag.NewFlagSet("alfred export", flag.ContinueOnError)
-		bin := fs.String("bin", "", "tablefix binary the workflow calls (default: tablefix on PATH, else this binary)")
-		keyword := fs.String("keyword", "tf", "Alfred keyword")
-		out := fs.String("o", "tablefix.alfredworkflow", "output file")
+		bin := fs.String("bin", "", "pastefix binary the workflow calls (default: pastefix on PATH, else this binary)")
+		keyword := fs.String("keyword", "pf", "Alfred keyword")
+		out := fs.String("o", "pastefix.alfredworkflow", "output file")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -97,34 +108,203 @@ func runAlfred(args []string, stdout, stderr io.Writer) error {
 	return fmt.Errorf("unknown alfred command %q (install, uninstall, export, filter)", args[0])
 }
 
+// splitQuery reads the Alfred query as an optional target, then an optional AI
+// instruction. One word that starts a target name only filters ("no" -> notes);
+// a target name followed by words picks it and makes the words the instruction;
+// words that name no target are the instruction for every target.
+func splitQuery(query string) (names []string, instruction string) {
+	query = strings.TrimSpace(query)
+	first, rest, _ := strings.Cut(query, " ")
+	rest = strings.TrimSpace(rest)
+	var exact, prefix []string
+	for _, tg := range targets {
+		if strings.EqualFold(tg.name, first) {
+			exact = append(exact, tg.name)
+		} else if first != "" && strings.HasPrefix(tg.name, strings.ToLower(first)) {
+			prefix = append(prefix, tg.name)
+		}
+	}
+	switch {
+	case query == "":
+		return nil, ""
+	case len(exact) == 1:
+		return exact, rest
+	case rest == "" && len(prefix) > 0:
+		return prefix, ""
+	}
+	return nil, query
+}
+
+type alfredItem struct {
+	UID          string `json:"uid,omitempty"`
+	Title        string `json:"title"`
+	Subtitle     string `json:"subtitle"`
+	Arg          string `json:"arg,omitempty"`
+	Autocomplete string `json:"autocomplete,omitempty"`
+	Valid        bool   `json:"valid"`
+	Mods         any    `json:"mods,omitempty"`
+	Variables    any    `json:"variables,omitempty"`
+}
+
+// slashCommands are the Alfred settings commands. Each maps to a CLI command.
+var slashCommands = []struct{ syntax, does string }{
+	{"/config", "List every setting"},
+	{"/set apikey KEY", "Call the Anthropic API with this key (kept in the keychain)"},
+	{"/unset apikey", "Remove the API key; use your claude login again"},
+	{"/set model NAME", "Model for the AI step: haiku, sonnet, opus or a model id"},
+	{"/unset model", "Go back to the default model (haiku)"},
+	{"/prompt add NAME TEXT", "Save a shortcut: pf slack NAME runs TEXT"},
+	{"/prompt rm NAME", "Remove a shortcut"},
+}
+
+// slashWords turns an Alfred /command into the CLI words configCommand takes.
+func slashWords(query string) []string {
+	w := strings.Fields(strings.TrimPrefix(strings.TrimSpace(query), "/"))
+	if len(w) == 0 {
+		return nil
+	}
+	switch w[0] {
+	case "set", "unset":
+		return append([]string{"config"}, w...)
+	case "config", "prompt":
+		return w
+	}
+	return nil
+}
+
+// describeCommand says what a complete command will do, without doing it, or
+// returns ok=false when the words are not a complete, valid command yet.
+func describeCommand(w []string) (string, bool) {
+	switch {
+	case len(w) == 4 && w[1] == "set" && w[2] == "apikey":
+		return "Save the API key " + maskKey(w[3]) + " in the keychain", true
+	case len(w) == 4 && w[1] == "set" && w[2] == "model":
+		return "Use the model " + w[3] + " for the AI step", true
+	case len(w) == 3 && w[1] == "unset" && (w[2] == "apikey" || w[2] == "model"):
+		return "Remove the " + w[2] + " setting", true
+	case len(w) >= 4 && w[0] == "prompt" && w[1] == "add" && promptNameError(w[2]) == nil:
+		return "Save shortcut " + w[2] + ": " + strings.Join(w[3:], " "), true
+	case len(w) == 3 && w[0] == "prompt" && w[1] == "rm":
+		return "Remove shortcut " + w[2], true
+	}
+	return "", false
+}
+
+// commandItems answers a query that starts with "/".
+func commandItems(query string) []alfredItem {
+	w := slashWords(query)
+	if len(w) == 1 && (w[0] == "config" || w[0] == "prompt") {
+		c, err := loadConfig()
+		if err != nil {
+			return []alfredItem{{Title: "Cannot read the config", Subtitle: err.Error()}}
+		}
+		var items []alfredItem
+		for _, l := range configLines(c) {
+			items = append(items, alfredItem{Title: clip(l.value, 90), Subtitle: l.key})
+		}
+		return items
+	}
+	if does, ok := describeCommand(w); ok {
+		return []alfredItem{{Title: does, Subtitle: "Enter to save", Arg: strings.TrimSpace(query), Valid: true}}
+	}
+	var items []alfredItem
+	q := strings.TrimSpace(query)
+	for _, c := range slashCommands {
+		if strings.HasPrefix(c.syntax, q) || strings.HasPrefix(q, c.syntax) {
+			auto, _, _ := strings.Cut(c.syntax, " NAME")
+			auto, _, _ = strings.Cut(auto, " KEY")
+			items = append(items, alfredItem{Title: c.syntax, Subtitle: c.does, Autocomplete: auto + " "})
+		}
+	}
+	if items == nil {
+		items = append(items, alfredItem{Title: "Unknown command " + q, Subtitle: "Type / to see the commands"})
+	}
+	return items
+}
+
+func clip(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-1]) + "…"
+	}
+	return s
+}
+
+// alfredRun runs the item Alfred picked: a /command, or a target with the AI
+// step in ai. The last line it writes becomes the notification.
+func alfredRun(arg, ai string, notice io.Writer) error {
+	if strings.HasPrefix(arg, "/") {
+		w := slashWords(arg)
+		if w == nil {
+			return fmt.Errorf("unknown command %q", arg)
+		}
+		msg, err := configCommand(w, io.Discard)
+		if msg != "" {
+			fmt.Fprintln(notice, "pastefix: "+msg)
+		}
+		return err
+	}
+	args := []string{arg, "--copy"}
+	if ai != "" {
+		args = append(args, "--ai", ai)
+	}
+	return run(args, os.Stdin, io.Discard, notice)
+}
+
 // alfredFilter prints Script Filter JSON: the targets with the clipboard's row
-// count, or one invalid item with the error, so Enter does nothing.
-func alfredFilter(stdout io.Writer) error {
-	type item struct {
-		UID          string `json:"uid,omitempty"`
-		Title        string `json:"title"`
-		Subtitle     string `json:"subtitle"`
-		Arg          string `json:"arg,omitempty"`
-		Match        string `json:"match,omitempty"`
-		Autocomplete string `json:"autocomplete,omitempty"`
-		Valid        bool   `json:"valid"`
+// count, or one invalid item with the error, so Enter does nothing. A query that
+// starts with "/" is a settings command instead.
+func alfredFilter(query string, stdout io.Writer) error {
+	type item = alfredItem
+	if strings.HasPrefix(strings.TrimSpace(query), "/") {
+		return json.NewEncoder(stdout).Encode(map[string]any{"items": commandItems(query)})
 	}
 	var items []item
-	text, err := clipboardReader()
+	cfg, err := loadConfig()
 	var t Table
 	if err == nil {
-		t, err = Parse(text)
+		var text string
+		if text, err = clipboardReader(); err == nil {
+			t, err = Parse(text)
+		}
 	}
 	if err != nil {
 		items = []item{{Title: "No table on the clipboard", Subtitle: err.Error()}}
 	} else {
+		names, instruction := splitQuery(query)
+		label := instruction
+		if text, ok := aiSteps[instruction]; ok {
+			label = instruction + ": " + text
+		} else if text, ok := cfg.Prompts[instruction]; ok {
+			label = instruction + ": " + text
+		}
 		for _, tg := range targets {
-			items = append(items, item{
+			if names != nil && !slices.Contains(names, tg.name) {
+				continue
+			}
+			it := item{
 				UID: tg.name, Title: tg.name + " — " + tg.where, Arg: tg.name, Valid: true,
 				Subtitle:     fmt.Sprintf("%s · %d rows on the clipboard", tg.what, len(t.Rows)),
-				Match:        tg.name + " " + tg.where,
-				Autocomplete: tg.name,
-			})
+				Autocomplete: tg.name + " ",
+				// ⌥-Enter adds the AI step; the run script reads the "ai" variable.
+				Mods: map[string]any{"alt": map[string]any{
+					"valid": true, "arg": tg.name, "variables": map[string]string{"ai": "clean"},
+					"subtitle": "⌥ AI clean: join wrapped words, fix typos, add a missing header (a few seconds)",
+				}},
+			}
+			if instruction != "" {
+				it.Variables = map[string]string{"ai": instruction}
+				it.Subtitle = fmt.Sprintf("AI %s · %d rows (a few seconds)", label, len(t.Rows))
+			}
+			items = append(items, it)
+		}
+		// With no query, list the shortcuts; Tab puts the name in the query.
+		if strings.TrimSpace(query) == "" {
+			for _, name := range slices.Sorted(maps.Keys(cfg.Prompts)) {
+				items = append(items, item{
+					Title: name + " → " + cfg.Prompts[name], Autocomplete: name,
+					Subtitle: "Shortcut · Tab, then Enter on a target",
+				})
+			}
 		}
 	}
 	return json.NewEncoder(stdout).Encode(map[string]any{"items": items})
@@ -134,14 +314,14 @@ func alfredFilter(stdout io.Writer) error {
 // user's shell PATH, so the path must be absolute.
 func resolveBin(bin string) (string, error) {
 	if bin == "" {
-		if p, err := exec.LookPath("tablefix"); err == nil {
+		if p, err := exec.LookPath("pastefix"); err == nil {
 			bin = p
 		} else if p, err := os.Executable(); err == nil {
 			bin = p
 		}
 	}
 	if bin == "" {
-		return "", errors.New("cannot find the tablefix binary; pass --bin")
+		return "", errors.New("cannot find the pastefix binary; pass --bin")
 	}
 	abs, err := filepath.Abs(bin)
 	if err != nil {
@@ -170,20 +350,23 @@ var plistTmpl = template.Must(template.New("plist").Funcs(template.FuncMap{"x": 
 	<key>connections</key>
 	<dict>
 		<key>{{.Filter}}</key>
-		<array><dict><key>destinationuid</key><string>{{.Run}}</string><key>modifiers</key><integer>0</integer><key>modifiersubtext</key><string></string><key>vitoclose</key><false/></dict></array>
+		<array>
+			<dict><key>destinationuid</key><string>{{.Run}}</string><key>modifiers</key><integer>0</integer><key>modifiersubtext</key><string></string><key>vitoclose</key><false/></dict>
+			<dict><key>destinationuid</key><string>{{.Run}}</string><key>modifiers</key><integer>524288</integer><key>modifiersubtext</key><string></string><key>vitoclose</key><false/></dict>
+		</array>
 		<key>{{.Run}}</key>
 		<array><dict><key>destinationuid</key><string>{{.Notify}}</string><key>modifiers</key><integer>0</integer><key>modifiersubtext</key><string></string><key>vitoclose</key><false/></dict></array>
 	</dict>
 	<key>createdby</key><string>samhvw8</string>
 	<key>description</key><string>Turn a copied text table into a table for Notes, Slack or chat</string>
 	<key>disabled</key><false/>
-	<key>name</key><string>tablefix</string>
+	<key>name</key><string>pastefix</string>
 	<key>objects</key>
 	<array>
 		<dict>
 			<key>config</key>
 			<dict>
-				<key>alfredfiltersresults</key><true/>
+				<key>alfredfiltersresults</key><false/>
 				<key>alfredfiltersresultsmatchmode</key><integer>0</integer>
 				<key>argumenttreatemptyqueryasnil</key><true/>
 				<key>argumenttrimmode</key><integer>0</integer>
@@ -228,7 +411,7 @@ var plistTmpl = template.Must(template.New("plist").Funcs(template.FuncMap{"x": 
 				<key>onlyshowifquerypopulated</key><true/>
 				<key>removeextension</key><false/>
 				<key>text</key><string>{query}</string>
-				<key>title</key><string>tablefix</string>
+				<key>title</key><string>pastefix</string>
 			</dict>
 			<key>type</key><string>alfred.workflow.output.notification</string>
 			<key>uid</key><string>{{.Notify}}</string>
@@ -243,12 +426,12 @@ var plistTmpl = template.Must(template.New("plist").Funcs(template.FuncMap{"x": 
 		<key>{{.Notify}}</key><dict><key>xpos</key><integer>450</integer><key>ypos</key><integer>50</integer></dict>
 	</dict>
 	<key>version</key><string>{{x .Version}}</string>
-	<key>webaddress</key><string>https://github.com/samhvw8/tablefix</string>
+	<key>webaddress</key><string>https://github.com/samhvw8/pastefix</string>
 </dict>
 </plist>
 `))
 
-// workflowPlist renders info.plist for a workflow that calls the tablefix binary at bin.
+// workflowPlist renders info.plist for a workflow that calls the pastefix binary at bin.
 func workflowPlist(bin, keyword string) ([]byte, error) {
 	if keyword == "" || strings.ContainsAny(keyword, " \t\n") {
 		return nil, fmt.Errorf("invalid --keyword %q", keyword)
@@ -262,10 +445,13 @@ func workflowPlist(bin, keyword string) ([]byte, error) {
 	err = plistTmpl.Execute(&buf, map[string]string{
 		"BundleID": bundleID, "Keyword": keyword, "Version": version,
 		"Filter": uidFilter, "Run": uidRun, "Notify": uidNotify,
-		"FilterScript": q + " alfred filter",
-		"RunScript":    q + ` "$1" --copy < /dev/null 2>&1 | tail -1`,
-		"Readme": "Copy a Markdown or box-drawing table, type `" + keyword + "`, pick a target, press Enter, then paste with ⌘V.\n\n" +
-			"Calls " + bin + ". Reinstall with `tablefix alfred install` if that path changes.\n\nhttps://github.com/samhvw8/tablefix",
+		"FilterScript": claudeEnv() + q + ` alfred filter "$1"`,
+		"RunScript":    claudeEnv() + q + ` alfred run "$1" < /dev/null 2>&1 | tail -1`,
+		"Readme": "Copy a Markdown or box-drawing table, type `" + keyword + "`, pick a target, press Enter, then paste with ⌘V. " +
+			"Press ⌥-Enter instead to add the AI clean step. Type an instruction after the target " +
+			"(`" + keyword + " slack translate to Vietnamese`), or on its own, to rewrite the table with it. " +
+			"The AI steps need the claude CLI.\n\n" +
+			"Calls " + bin + ". Reinstall with `pastefix alfred install` if that path changes.\n\nhttps://github.com/samhvw8/pastefix",
 	})
 	return buf.Bytes(), err
 }
@@ -295,9 +481,9 @@ func alfredWorkflowsDir() (string, error) {
 	return dir, nil
 }
 
-var bundleIDRe = regexp.MustCompile(`<key>bundleid</key>\s*<string>` + regexp.QuoteMeta(bundleID) + `</string>`)
+var bundleIDRe = regexp.MustCompile(`<key>bundleid</key>\s*<string>(` + regexp.QuoteMeta(bundleID) + `|` + regexp.QuoteMeta(legacyBundleID) + `)</string>`)
 
-// findInstalled returns the folder of an installed tablefix workflow, or "".
+// findInstalled returns the folder of an installed pastefix workflow, or "".
 func findInstalled() (string, error) {
 	dir, err := alfredWorkflowsDir()
 	if err != nil {
@@ -357,6 +543,15 @@ func alfredInstall(bin, keyword string, stderr io.Writer) error {
 	resolved, _ := resolveBin(bin)
 	fmt.Fprintf(stderr, "%s Alfred workflow (keyword %q) at %s\ncalls %s\n", action, keyword, target, resolved)
 	return nil
+}
+
+// claudeEnv passes the claude CLI's path to the workflow, which has no shell PATH.
+// Without claude the workflow still works; only ⌥-Enter reports the missing CLI.
+func claudeEnv() string {
+	if p, err := claudeBin(); err == nil {
+		return "PASTEFIX_CLAUDE=" + shellQuote(p) + " "
+	}
+	return ""
 }
 
 func writeFile(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }

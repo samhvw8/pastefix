@@ -205,9 +205,9 @@ func TestCLIReadsClipboardWhenStdinNotPiped(t *testing.T) {
 
 func TestAlfredFilterJSON(t *testing.T) {
 	defer func() { clipboardReader = readClipboard }()
-	decode := func() []map[string]any {
+	decode := func(query ...string) []map[string]any {
 		var out bytes.Buffer
-		if err := alfredFilter(&out); err != nil {
+		if err := alfredFilter(strings.Join(query, " "), &out); err != nil {
 			t.Fatal(err)
 		}
 		var v struct{ Items []map[string]any }
@@ -221,6 +221,34 @@ func TestAlfredFilterJSON(t *testing.T) {
 	if len(items) != 5 || items[0]["arg"] != "notes" || !strings.Contains(items[0]["subtitle"].(string), "2 rows") {
 		t.Fatalf("items = %v", items)
 	}
+	alt := items[0]["mods"].(map[string]any)["alt"].(map[string]any)
+	if alt["arg"] != "notes" || alt["variables"].(map[string]any)["ai"] != "clean" {
+		t.Fatalf("alt mod = %v", alt)
+	}
+	if items[0]["variables"] != nil {
+		t.Fatalf("plain Enter must not run the AI step: %v", items[0])
+	}
+	// A partial target name filters, with no AI step.
+	if items := decode("no"); len(items) != 1 || items[0]["arg"] != "notes" || items[0]["variables"] != nil {
+		t.Fatalf("items = %v", items)
+	}
+	// A target name, then words: Enter runs those words as the AI instruction.
+	items = decode("slack", "translate to Vietnamese")
+	if len(items) != 1 || items[0]["arg"] != "slack" ||
+		items[0]["variables"].(map[string]any)["ai"] != "translate to Vietnamese" ||
+		!strings.Contains(items[0]["subtitle"].(string), "translate to Vietnamese") {
+		t.Fatalf("items = %v", items)
+	}
+	// Words that name no target: every target runs them as the instruction.
+	items = decode("translate to Vietnamese")
+	if len(items) != 5 {
+		t.Fatalf("items = %v", items)
+	}
+	for _, it := range items {
+		if it["variables"].(map[string]any)["ai"] != "translate to Vietnamese" {
+			t.Fatalf("item = %v", it)
+		}
+	}
 	clipboardReader = func() (string, error) { return "hello", nil }
 	if items := decode(); len(items) != 1 || items[0]["valid"] != false {
 		t.Fatalf("items = %v", items)
@@ -228,11 +256,13 @@ func TestAlfredFilterJSON(t *testing.T) {
 }
 
 func TestWorkflowPlistIsValidAndQuotesPath(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "it's tablefix")
+	bin := filepath.Join(t.TempDir(), "it's pastefix")
 	if err := exec.Command("touch", bin).Run(); err != nil {
 		t.Fatal(err)
 	}
-	plist, err := workflowPlist(bin, "tf")
+	claude := "/opt/it's claude"
+	t.Setenv("PASTEFIX_CLAUDE", claude)
+	plist, err := workflowPlist(bin, "pf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,10 +282,29 @@ func TestWorkflowPlistIsValidAndQuotesPath(t *testing.T) {
 	if err != nil || string(echo) != bin {
 		t.Fatalf("quoting broke the path: %q", echo)
 	}
-	if !strings.HasPrefix(string(script), shellQuote(bin)+` "$1" --copy`) {
+	if !strings.Contains(string(script), "PASTEFIX_CLAUDE="+shellQuote(claude)+" "+shellQuote(bin)+` alfred run "$1" < /dev/null`) {
 		t.Fatalf("script = %s", script)
+	}
+	filter, err := exec.Command("plutil", "-extract", "objects.0.config.script", "raw", path).Output()
+	if err != nil || strings.TrimSpace(string(filter)) != "PASTEFIX_CLAUDE="+shellQuote(claude)+" "+shellQuote(bin)+` alfred filter "$1"` {
+		t.Fatalf("filter script = %s (%v)", filter, err)
+	}
+	// The filter does its own matching, so Alfred must not hide items.
+	if out, err := exec.Command("plutil", "-extract", "objects.0.config.alfredfiltersresults", "raw", path).Output(); err != nil || strings.TrimSpace(string(out)) != "false" {
+		t.Fatalf("alfredfiltersresults = %s (%v)", out, err)
 	}
 	if _, err := workflowPlist(bin, "t f"); err == nil {
 		t.Fatal("keyword with a space accepted")
+	}
+}
+
+func TestInstallFindsWorkflowFromBeforeTheRename(t *testing.T) {
+	for _, id := range []string{"com.github.samhvw8.pastefix", "com.github.samhvw8.tablefix"} {
+		if !bundleIDRe.MatchString("<key>bundleid</key>\n\t<string>" + id + "</string>") {
+			t.Fatalf("%s not matched", id)
+		}
+	}
+	if bundleIDRe.MatchString("<key>bundleid</key><string>com.github.someone.else</string>") {
+		t.Fatal("matched another workflow")
 	}
 }

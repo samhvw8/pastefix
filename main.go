@@ -1,4 +1,4 @@
-// Command tablefix turns a Markdown or box-drawing text table into a table that
+// Command pastefix turns a Markdown or box-drawing text table into a table that
 // pastes well elsewhere: a rich-text table for Apple Notes, a code-block table for
 // Slack, or a list for chat boxes.
 package main
@@ -14,14 +14,19 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "0.2.0"
+const version = "0.5.1"
 
-const usage = `tablefix: turn a text table into one that pastes well elsewhere.
+const usage = `pastefix: turn a text table into one that pastes well elsewhere.
 
 Usage:
-  tablefix [target] [flags]
-  tablefix alfred install [--bin PATH] [--keyword tf]
-  tablefix alfred uninstall | export [-o FILE] | filter
+  pastefix [target] [flags]
+  pastefix config                          list every setting
+  pastefix config set apikey|model VALUE   apikey goes to the macOS keychain
+  pastefix config unset apikey|model
+  pastefix prompt add NAME TEXT...         save a shortcut: --ai NAME runs TEXT
+  pastefix prompt rm NAME
+  pastefix alfred install [--bin PATH] [--keyword pf]
+  pastefix alfred uninstall | export [-o FILE] | filter | run
 
 Targets:
   notes  rich-text table (HTML + RTF) -> native table in Apple Notes, Pages,
@@ -30,6 +35,16 @@ Targets:
   list   one block per row, for chat boxes (Messenger, Zalo, iMessage, Slack)
   box    box table without the code fence
   md     clean, aligned Markdown table
+
+AI step (optional): after the table is fixed in code, a model edits its text.
+The code still draws the table, so the model cannot break it.
+  --ai clean              join words split by wrapping, fix typos, add a missing
+                          header; keeps every row, column and fact
+  --ai NAME               a shortcut saved with "prompt add"
+  --ai "<instruction>"    anything else, e.g. --ai "translate to Vietnamese"
+With an API key set, it calls the Anthropic API; else it runs the claude CLI on
+your Claude login. If the AI step fails, pastefix says why and uses the table
+fixed in code.
 
 Input is stdin when it is a pipe or file, else the clipboard. Output goes to the
 clipboard when run in a terminal (preview on stderr), else to stdout.
@@ -51,7 +66,7 @@ var (
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(os.Stderr, "tablefix:", err)
+			fmt.Fprintln(os.Stderr, "pastefix:", err)
 		}
 		os.Exit(1)
 	}
@@ -61,12 +76,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if len(args) > 0 && args[0] == "alfred" {
 		return runAlfred(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && (args[0] == "config" || args[0] == "prompt") {
+		msg, err := configCommand(args, stdout)
+		if msg != "" {
+			fmt.Fprintln(stderr, "pastefix: "+msg)
+		}
+		return err
+	}
 
 	target, positional := "notes", false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		target, args, positional = args[0], args[1:], true
 	}
-	fs := flag.NewFlagSet("tablefix", flag.ContinueOnError)
+	fs := flag.NewFlagSet("pastefix", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, usage); fs.PrintDefaults() }
 	header := fs.String("header", "", "comma-separated column names (overrides detection)")
@@ -76,14 +98,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	toStdout := fs.Bool("stdout", false, "print instead of copying to the clipboard")
 	toClip := fs.Bool("copy", false, "copy to the clipboard even when stdout is not a terminal")
 	showVersion := fs.Bool("version", false, "print the version")
+	aiStep := fs.String("ai", "", `AI step after the code fix: "clean" or a free instruction`)
+	aiModel := fs.String("ai-model", "", "model for --ai (default: the config model, else haiku)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, "tablefix", version)
+		fmt.Fprintln(stdout, "pastefix", version)
 		return nil
 	}
-	if fs.NArg() > 0 { // target after the flags: tablefix --width 30 slack
+	if fs.NArg() > 0 { // target after the flags: pastefix --width 30 slack
 		if positional || fs.NArg() > 1 {
 			return fmt.Errorf("unexpected argument %q", fs.Arg(fs.NArg()-1))
 		}
@@ -112,6 +136,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	t, err := Parse(text)
 	if err != nil {
 		return err
+	}
+	aiNote := ""
+	if *aiStep != "" {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		model := *aiModel
+		if model == "" {
+			model = cfg.Model
+		}
+		if model == "" {
+			model = defaultModel
+		}
+		// A failed AI step falls back to the code fix, and says so.
+		if et, err := Enhance(t, *aiStep, model, cfg.Prompts); err != nil {
+			aiNote = fmt.Sprintf(" AI step failed (%v); used the code fix.", err)
+			fmt.Fprintln(stderr, "pastefix:"+aiNote)
+		} else {
+			t, aiNote = et, " AI step: "+aiLabel(*aiStep, cfg.Prompts)+"."
+		}
 	}
 	if *noHeader {
 		t.SetHeader(nil) //nolint:errcheck // nil never fails
@@ -152,6 +197,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if rich != "" {
 		kind = "rich-text table"
 	}
-	fmt.Fprintf(stderr, "\ntablefix: copied %d rows as %s. Paste with ⌘V.\n", len(t.Rows), kind)
+	fmt.Fprintf(stderr, "\npastefix: copied %d rows as %s.%s Paste with ⌘V.\n", len(t.Rows), kind, aiNote)
 	return nil
+}
+
+// aiLabel names the step in the copy message: the built-in step or shortcut
+// name, else "custom".
+func aiLabel(step string, prompts map[string]string) string {
+	if _, ok := aiSteps[step]; ok {
+		return step
+	}
+	if _, ok := prompts[step]; ok {
+		return step
+	}
+	return "custom"
 }

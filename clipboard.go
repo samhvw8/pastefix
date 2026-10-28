@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-var errNoClipboard = errors.New("the clipboard needs macOS; pipe the table in instead (tablefix md < table.txt)")
+var errNoClipboard = errors.New("the clipboard needs macOS; pipe the table in instead (pastefix md < table.txt)")
 
 // macCommand runs a macOS tool by absolute path with a UTF-8 locale. Alfred runs
 // scripts with no PATH guarantee and no LANG, and without a locale pbpaste
@@ -58,7 +58,7 @@ func writeClipboard(plain, richHTML string) error {
 		if err != nil {
 			return fmt.Errorf("textutil: %w", err)
 		}
-		f, err := os.CreateTemp("", "tablefix-*.rtf")
+		f, err := os.CreateTemp("", "pastefix-*.rtf")
 		if err != nil {
 			return err
 		}

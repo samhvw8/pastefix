@@ -1,7 +1,7 @@
 ---
 type: Decision
 title: One target per destination app
-description: Why tablefix writes rich text for Notes but a code block or list for Slack and chat apps.
+description: Why pastefix writes rich text for Notes but a code block or list for Slack and chat apps.
 tags: [decision, slack, apple-notes]
 generated:
   by: claude-code/claude-opus-5-5

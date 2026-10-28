@@ -26,7 +26,7 @@ generated:
   Alfred, where stdin is an open non-terminal that never closes.
 - Output goes to the clipboard when stdout is a terminal (`x/term`), or with `--copy`;
   otherwise it is printed. `--stdout` forces printing.
-- The target may come first or after the flags (`tablefix --width 30 slack`). Clipboard
+- The target may come first or after the flags (`pastefix --width 30 slack`). Clipboard
   use off macOS fails with a message that says to pipe instead.
 
 # Rich-text clipboard

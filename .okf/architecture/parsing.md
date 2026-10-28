@@ -1,7 +1,7 @@
 ---
 type: Architecture
 title: Parsing text tables
-description: How tablefix reads Markdown pipe tables and box-drawing tables, joins wrapped cells and detects the header.
+description: How pastefix reads Markdown pipe tables and box-drawing tables, joins wrapped cells and detects the header.
 tags: [parser]
 resource: table.go
 generated:
@@ -18,7 +18,7 @@ generated:
   has only `-`, `:` and `|`.
 - **Box mode** (any box rule present): the data lines between two rules form one row,
   and their cell fragments are joined with a space. This rejoins cells that a terminal
-  or tablefix's own `--width` wrapped. In Markdown mode each data line is a row.
+  or pastefix's own `--width` wrapped. In Markdown mode each data line is a row.
 - Short rows are padded with empty cells to the widest row.
 - **Header:** the first row is a header when the only rule between rows is after row 1,
   or when the rule after row 1 is heavy (`═`, `━`, `=`). Rules after every row (the

@@ -2,4 +2,6 @@
 
 * [Parsing](parsing.md) - table formats, wrapped cells, header detection.
 * [Output and clipboard](output.md) - targets, stdin/stdout/clipboard rules, rich-text pasteboard.
-* [Alfred workflow](alfred-workflow.md) - `tablefix alfred install` and the `tf` workflow.
+* [AI step](ai-step.md) - the optional `--ai` step: claude edits the data, code draws the table.
+* [Alfred workflow](alfred-workflow.md) - `pastefix alfred install` and the `pf` workflow.
+* [Settings and prompt shortcuts](config.md) - config file, API key in the keychain, `config`/`prompt` and Alfred `/` commands.

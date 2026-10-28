@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// Runs only with TABLEFIX_CLIPBOARD_TEST=1, because it overwrites the clipboard.
+// Runs only with PASTEFIX_CLIPBOARD_TEST=1, because it overwrites the clipboard.
 // Alfred runs scripts with no LANG; without it pbpaste turns "│" into "?".
 func TestClipboardRoundTripWithoutLocale(t *testing.T) {
-	if runtime.GOOS != "darwin" || os.Getenv("TABLEFIX_CLIPBOARD_TEST") != "1" {
-		t.Skip("set TABLEFIX_CLIPBOARD_TEST=1 on macOS to run (overwrites the clipboard)")
+	if runtime.GOOS != "darwin" || os.Getenv("PASTEFIX_CLIPBOARD_TEST") != "1" {
+		t.Skip("set PASTEFIX_CLIPBOARD_TEST=1 on macOS to run (overwrites the clipboard)")
 	}
 	for _, k := range []string{"LANG", "LC_ALL", "LC_CTYPE", "PATH"} {
 		t.Setenv(k, "")
