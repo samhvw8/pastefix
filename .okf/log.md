@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-10-29
+* **Fix**: `claude -p` runs with `--no-session-persistence`. Before, every AI step run without an API key left a session folder in `~/.claude/projects` ([AI step](/architecture/ai-step.md)). The repo is now samhvw8/pastefix and the folder `~/workspace/tools/pastefix`. Version 0.5.2.
+
 ## 2026-10-28
 * **Update**: The default Alfred keyword is now `pf` (was `tf`). `pastefix alfred install` changes it on the installed workflow; `--keyword` still picks another. Version 0.5.1.
 

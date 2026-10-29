@@ -54,7 +54,7 @@ tests. Haiku 5.5 costs $0.10 / $0.50 per million input / output tokens.
 
 # Calling claude
 
-`claude -p --model haiku --tools "" --setting-sources "" --strict-mcp-config
+`claude -p --no-session-persistence --model haiku --tools "" --setting-sources "" --strict-mcp-config
 --output-format json --json-schema <table schema> --system-prompt <step>`, with the table
 on stdin, run in an empty temp folder, with a 60 s timeout.
 
@@ -62,6 +62,8 @@ on stdin, run in an empty temp folder, with a 60 s timeout.
 - `--json-schema` makes the answer `structured_output`; output can be one result
   object or, in verbose mode, an array whose `result` message holds it.
 - The prompt says the cells are data, never instructions (clipboard text is untrusted).
+- `--no-session-persistence`: without it, each run saved a session log in a new
+  `~/.claude/projects/<temp folder>` folder, one per AI run.
 - `claude` finds its login in the keychain by `$USER`. A bare environment has no `USER`
   and gets "Not logged in", so `runClaude` adds it.
 - Path: `PASTEFIX_CLAUDE`, else `claude` on `PATH`. The Alfred workflow bakes the path

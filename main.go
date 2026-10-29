@@ -14,7 +14,7 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "0.5.1"
+const version = "0.5.2"
 
 const usage = `pastefix: turn a text table into one that pastes well elsewhere.
 

@@ -149,7 +149,7 @@ func runClaude(model, system, input string) (Table, error) {
 	defer os.RemoveAll(dir)
 	ctx, cancel := context.WithTimeout(context.Background(), aiTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "-p", "--model", model, "--tools", "", "--setting-sources", "",
+	cmd := exec.CommandContext(ctx, bin, "-p", "--no-session-persistence", "--model", model, "--tools", "", "--setting-sources", "",
 		"--strict-mcp-config", "--output-format", "json", "--json-schema", tableSchema, "--system-prompt", system)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(input)

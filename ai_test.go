@@ -2,7 +2,10 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -129,5 +132,26 @@ func TestClaudeEnvAddsUser(t *testing.T) {
 	env = claudeEnviron([]string{"USER=me"}, "sam")
 	if !reflect.DeepEqual(env, []string{"USER=me"}) {
 		t.Fatalf("env = %q", env)
+	}
+}
+
+// Each claude -p run must not save a session: one AI run would otherwise add
+// a folder to ~/.claude/projects.
+func TestRunClaudeSavesNoSession(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	fake := filepath.Join(dir, "claude")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argsFile + "'\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PASTEFIX_CLAUDE", fake)
+	runClaude("haiku", "system", "{}") //nolint:errcheck // the fake prints no answer; only its args matter
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(strings.Split(string(args), "\n"), "--no-session-persistence") {
+		t.Fatalf("claude args lack --no-session-persistence:\n%s", args)
 	}
 }
