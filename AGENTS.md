@@ -48,6 +48,7 @@ mise run release    # check, then gh release v<version> with 4 binaries
   legacy id match), so `alfred install` keeps updating the same folder.
 - The user's machine installs it with `go:github.com/samhvw8/pastefix` in
   `~/.dotfiles/mise/config.toml`. After a push, run
-  `GOPROXY=direct mise upgrade go:github.com/samhvw8/pastefix`: the Go proxy serves a
-  cached `@latest` for a while, so a plain `mise install -f` reinstalls the old commit.
+  `mise cache clear go-github-com-samhvw8-pastefix`, then
+  `GOPROXY=direct mise upgrade go:github.com/samhvw8/pastefix`. Both mise (its version
+  list) and the Go proxy cache `@latest`; with either cache, mise reinstalls the old commit.
   The workflow path (`…/latest/bin/pastefix`) does not change on upgrade.
