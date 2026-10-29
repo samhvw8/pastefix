@@ -72,12 +72,17 @@ func splitRow(line string) []string {
 	return append(parts, strings.TrimSpace(cur.String()))
 }
 
+// tableLines splits text into lines, with box verticals turned into pipes.
+func tableLines(text string) []string {
+	repl := strings.NewReplacer("│", "|", "┃", "|", "║", "|")
+	return strings.Split(repl.Replace(strings.ReplaceAll(text, "\r\n", "\n")), "\n")
+}
+
 // Parse reads a Markdown pipe table or a box-drawing table (│ ├─┼─┤, +---+).
 // In a box table the lines between two rules are one row, so cells wrapped
 // over several lines are joined again.
 func Parse(text string) (Table, error) {
-	repl := strings.NewReplacer("│", "|", "┃", "|", "║", "|")
-	lines := strings.Split(repl.Replace(strings.ReplaceAll(text, "\r\n", "\n")), "\n")
+	lines := tableLines(text)
 	boxed := false
 	for _, l := range lines {
 		if ruleKind(l) == "box" {

@@ -14,12 +14,13 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "0.5.2"
+const version = "0.6.0"
 
 const usage = `pastefix: turn a text table into one that pastes well elsewhere.
 
 Usage:
   pastefix [target] [flags]
+  pastefix stats                           use per target, from the usage log
   pastefix config                          list every setting
   pastefix config set apikey|model VALUE   apikey goes to the macOS keychain
   pastefix config unset apikey|model
@@ -30,7 +31,9 @@ Usage:
 
 Targets:
   notes  rich-text table (HTML + RTF) -> native table in Apple Notes, Pages,
-         Mail, Google Docs, Notion, Word (default)
+         Mail, Google Docs, Notion, Word
+With no target, pastefix reuses the last target you copied to the clipboard,
+else notes. Piped output (a script) always defaults to notes.
   slack  box table inside a code block (Slack messages have no tables)
   list   one block per row, for chat boxes (Messenger, Zalo, iMessage, Slack)
   box    box table without the code fence
@@ -77,14 +80,44 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return runAlfred(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && (args[0] == "config" || args[0] == "prompt") {
-		msg, err := configCommand(args, stdout)
+		msg, err := loggedConfigCommand(args, stdout, stderr, "cli")
 		if msg != "" {
 			fmt.Fprintln(stderr, "pastefix: "+msg)
 		}
 		return err
 	}
+	if len(args) == 1 && args[0] == "stats" {
+		return statsCommand(stdout)
+	}
+	return convertLogged(args, stdin, stdout, stderr, "cli")
+}
 
-	target, positional := "notes", false
+// loggedConfigCommand runs a config or prompt command and adds it to the usage log.
+func loggedConfigCommand(words []string, out, warn io.Writer, via string) (string, error) {
+	msg, err := configCommand(words, out)
+	r := usageRow{Target: words[0], Via: via}
+	if err != nil {
+		r.Exit = 1
+	}
+	logUsage(r, warn)
+	return msg, err
+}
+
+// convertLogged runs one conversion and adds it to the usage log.
+func convertLogged(args []string, stdin io.Reader, stdout, stderr io.Writer, via string) error {
+	r := usageRow{Via: via}
+	err := convert(args, stdin, stdout, stderr, &r)
+	if r.Target != "" { // --help and --version are not conversions
+		if err != nil {
+			r.Exit = 1
+		}
+		logUsage(r, stderr)
+	}
+	return err
+}
+
+func convert(args []string, stdin io.Reader, stdout, stderr io.Writer, r *usageRow) error {
+	target, positional := "", false
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		target, args, positional = args[0], args[1:], true
 	}
@@ -113,11 +146,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		target = fs.Arg(0)
 	}
+	toClipboard := !*toStdout && (*toClip || stdoutTerminal())
+	explicit := target != ""
+	if !explicit {
+		// No target: reuse the last one copied to the clipboard. A piped run is a
+		// script, so it always gets notes.
+		target = "notes"
+		if toClipboard {
+			if last, err := lastTarget(); err != nil {
+				fmt.Fprintf(stderr, "pastefix: last target: %v; using notes\n", err)
+			} else if last != "" {
+				target = last
+			}
+		}
+	}
 	switch target {
 	case "notes", "slack", "list", "box", "md":
 	default:
 		return fmt.Errorf("unknown target %q (notes, slack, list, box, md)", target)
 	}
+	r.Target, r.Input = target, "none"
 
 	var text string
 	if stdinPiped() {
@@ -137,6 +185,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	r.Input = inputKind(text)
 	aiNote := ""
 	if *aiStep != "" {
 		cfg, err := loadConfig()
@@ -151,7 +200,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			model = defaultModel
 		}
 		// A failed AI step falls back to the code fix, and says so.
+		r.AI = aiLabel(*aiStep, cfg.Prompts)
 		if et, err := Enhance(t, *aiStep, model, cfg.Prompts); err != nil {
+			r.AIFallback = true
 			aiNote = fmt.Sprintf(" AI step failed (%v); used the code fix.", err)
 			fmt.Fprintln(stderr, "pastefix:"+aiNote)
 		} else {
@@ -185,12 +236,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		out = Markdown(t)
 	}
 
-	if *toStdout || !(*toClip || stdoutTerminal()) {
+	if !toClipboard {
 		_, err := fmt.Fprintln(stdout, out)
 		return err
 	}
 	if err := clipboardWriter(out, rich); err != nil {
 		return err
+	}
+	if explicit {
+		if err := saveLastTarget(target); err != nil {
+			fmt.Fprintf(stderr, "pastefix: last target: %v\n", err)
+		}
 	}
 	fmt.Fprintln(stderr, out)
 	kind := target

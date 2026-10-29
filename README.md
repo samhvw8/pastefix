@@ -17,8 +17,10 @@ reads the table from the clipboard and puts a better version back:
 | `md` | GitHub, Obsidian, anything Markdown | A clean, aligned Markdown table |
 | `box` | Terminals, plain-text email | A box table without the code fence |
 
-Slack messages cannot show tables at all, in mrkdwn or in Block Kit, so `slack` and
-`list` are the two good options there.
+Slack now turns cells pasted from Excel or Google Sheets (tab-separated text) into a
+real table, and one source says a pasted Markdown table works too. `slack` stays as the
+code block, because it shows the same everywhere. See [Host tests](#host-tests) for what
+was tested on a real Mac.
 
 ## Install
 
@@ -73,6 +75,8 @@ pastefix slack --width 30                      # wrap long cells at 30 character
 pastefix list --header "Field,Journals,Magazines"
 pastefix list --bold "**"                      # Markdown bold instead of Slack *bold*
 pbpaste | pastefix md > table.md               # piped: prints instead of copying
+pastefix                                       # no target: the last one you copied, else notes
+pastefix stats                                 # runs per target, from the usage log
 ```
 
 - **Input:** stdin when it is a pipe or a file, else the clipboard.
@@ -130,6 +134,25 @@ In Alfred the same commands start with `/`: `pf /config`, `pf /set apikey sk-ant
 `pf /prompt add vi translate to Vietnamese`. With an empty query, Alfred lists your
 shortcuts under the targets. Settings live in
 `~/Library/Application Support/pastefix/config.json`.
+
+## Usage log
+
+Until 2026-11-28, each run adds one line to `usage.jsonl` next to the settings file:
+target, input kind (pipe, box, wrapped), exit code, whether the AI step fell back, and
+whether it came from Alfred. Nothing leaves the Mac. `pastefix stats` marks a target that
+nobody used as "candidate to cut", and one that only failed as "fix or cut". After the end
+date the log stops writing, and `stats` asks for the cut decision.
+
+## Host tests
+
+A target stays only while the app it serves still shows a raw pasted table wrong. Test
+input: `| Name | Score |`, `|---|---|`, `| a | 1 |`, and the same table as tab-separated
+text.
+
+| Target | App | Raw pipe table | Tab-separated | With pastefix | Tested |
+|---|---|---|---|---|---|
+| `notes` | Apple Notes, macOS 27.0.1 | plain text | plain text | real table | 2026-10-29 |
+| `slack` | Slack desktop | not tested | not tested | code block | Slack was signed out |
 
 ## Examples
 

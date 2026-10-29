@@ -237,7 +237,7 @@ func alfredRun(arg, ai string, notice io.Writer) error {
 		if w == nil {
 			return fmt.Errorf("unknown command %q", arg)
 		}
-		msg, err := configCommand(w, io.Discard)
+		msg, err := loggedConfigCommand(w, io.Discard, notice, "alfred")
 		if msg != "" {
 			fmt.Fprintln(notice, "pastefix: "+msg)
 		}
@@ -247,7 +247,7 @@ func alfredRun(arg, ai string, notice io.Writer) error {
 	if ai != "" {
 		args = append(args, "--ai", ai)
 	}
-	return run(args, os.Stdin, io.Discard, notice)
+	return convertLogged(args, os.Stdin, io.Discard, notice, "alfred")
 }
 
 // alfredFilter prints Script Filter JSON: the targets with the clipboard's row

@@ -31,8 +31,9 @@ pipes with drawn lines between them (Notes renders `├───┼───┤`
 | `ai.go` | The optional `--ai` step: Anthropic API with a key, else `claude -p`; checks the returned shape |
 | `config.go` | Settings file, API key in the keychain, `config` and `prompt` commands |
 | `alfred.go` | `pastefix alfred …`: writes, finds and removes the workflow |
+| `usage.go` | Temporary usage log, `pastefix stats`, the last-target default |
 | `main.go` | CLI flags and the stdin/stdout/clipboard rules |
-| `pastefix_test.go`, `ai_test.go`, `config_test.go` | Go tests (fake runner, fake keychain, local API server) |
+| `pastefix_test.go`, `ai_test.go`, `config_test.go`, `usage_test.go` | Go tests (fake runner, fake keychain, local API server) |
 
 # Concepts
 

@@ -18,9 +18,11 @@ One `main` package at the root, so `go install github.com/samhvw8/pastefix@lates
 | `ai.go` | Optional `--ai` step: Anthropic API (key set) or `claude -p`, JSON schema; the model edits data, code draws |
 | `config.go` | Settings file, API key in the keychain, `config`/`prompt` commands (CLI and Alfred `/`) |
 | `alfred.go` | `pastefix alfred install/uninstall/export/filter/run`: writes the workflow plist |
+| `usage.go` | Temporary usage log (ends 2026-11-28), `pastefix stats`, last-target default |
 | `main.go` | Flags, target choice, stdin/stdout/clipboard rules |
 | `pastefix_test.go` | Tests (parser, renderers, CLI with fake clipboard, Alfred plist) |
 | `ai_test.go` | AI step tests with a fake runner (no model calls) |
+| `usage_test.go` | Usage log rows, stats verdicts, log end date, last target |
 | `config_test.go` | Settings, keychain (faked in `TestMain`), API request via a local server, Alfred `/` commands |
 
 ## Commands
@@ -42,6 +44,8 @@ mise run release    # check, then gh release v<version> with 4 binaries
   and a fake keychain: a real API key would make tests call the paid API.
 - **Back up the clipboard before a test that writes it** (`pbpaste > backup`), and
   restore it after.
+- **Run real tests with a temp `PASTEFIX_CONFIG`.** Otherwise your test runs land in the
+  real usage log and skew the cut decision.
 - **Bump `version`** in `main.go` before `mise run release`.
 - **The workflow calls the binary by absolute path.** Alfred has no shell `PATH`.
   Change the workflow only in `alfred.go`'s template, and keep the bundle id (and the

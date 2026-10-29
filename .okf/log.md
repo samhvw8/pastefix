@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-10-29
+* **Addition**: Temporary usage log (`usage.jsonl`, until 2026-11-28) and `pastefix stats`, which marks unused targets as cut candidates; `pastefix` with no target reuses the last clipboard target. Host test on macOS 27.0.1: Notes shows a raw pipe or tab-separated table as plain text, so `notes` stays; Slack not tested (signed out). README no longer says Slack cannot show tables ([usage log](/architecture/usage-log.md), [targets](/decisions/targets-per-app.md)). Version 0.6.0.
 * **Fix**: `claude -p` runs with `--no-session-persistence`. Before, every AI step run without an API key left a session folder in `~/.claude/projects` ([AI step](/architecture/ai-step.md)). The repo is now samhvw8/pastefix and the folder `~/workspace/tools/pastefix`. Version 0.5.2.
 
 ## 2026-10-28
